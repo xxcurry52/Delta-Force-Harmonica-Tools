@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul
-cd /d "%~dp0"
+cd /d "%~dp0\.."
 echo.
 echo   正在打包 exe（瘦身配置），请稍候约 1 分钟...
 echo   只保留程序用得到的 QtCore / QtGui / QtWidgets，体积约 22MB（原来 45MB）
 echo.
-"C:\Users\Admin\.workbuddy\binaries\python\envs\default\Scripts\python.exe" -m PyInstaller --noconfirm --distpath dist --workpath build HarmonicaScore.spec
+python -m PyInstaller --noconfirm --distpath dist --workpath build scripts/HarmonicaScore.spec
 if errorlevel 1 (
     echo.
     echo   [打包失败] 请看上面的红色报错信息

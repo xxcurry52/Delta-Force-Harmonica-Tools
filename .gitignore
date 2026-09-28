@@ -1,6 +1,7 @@
 # ===== Python 缓存 =====
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
 # ===== PyInstaller 打包产物 =====
 build/

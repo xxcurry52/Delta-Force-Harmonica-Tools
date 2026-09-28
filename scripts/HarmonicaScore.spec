@@ -5,9 +5,14 @@
 原 45MB 里有一大半是用不到的东西：软件 OpenGL 模拟（7.7MB）、QML/Quick（5MB）、
 QtPdf（2.5MB）、QtNetwork + OpenSSL（3.4MB）等等。
 
-用：python -m PyInstaller --noconfirm HarmonicaScore.spec
+用：在项目根目录执行
+    python -m PyInstaller --noconfirm --distpath dist --workpath build scripts/HarmonicaScore.spec
 """
 import os
+
+# spec 文件在 scripts/ 下，入口文件在上一级
+_SPEC_DIR = os.path.dirname(os.path.abspath(SPEC))
+_ROOT_DIR = os.path.dirname(_SPEC_DIR)
 
 # ---- 用不到的 PySide6 子模块（PyInstaller 层面直接不分析）----
 EXCLUDES = [
@@ -82,8 +87,8 @@ def _keep(name):
 
 
 a = Analysis(
-    ["harmonica_visualizer.py"],
-    pathex=[],
+    [os.path.join(_ROOT_DIR, "harmonica_visualizer.py")],
+    pathex=[_ROOT_DIR],
     binaries=[],
     datas=[],
     hiddenimports=[],

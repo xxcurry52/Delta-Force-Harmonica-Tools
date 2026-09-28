@@ -9,6 +9,7 @@
 ```
 harmonica-visualizer/
 ├── harmonica_visualizer.py   # 入口文件（仅 20 行，调用 src.main）
+├── run.bat                   # 启动脚本（双击即用）
 ├── src/
 │   ├── __init__.py
 │   ├── constants.py          # 共享常量：按键映射、配色、面板布局
@@ -24,7 +25,13 @@ harmonica-visualizer/
 ├── tests/
 │   ├── __init__.py
 │   └── test_song_parser.py   # pytest 单元测试（34 个用例）
-├── HarmonicaScore.spec       # PyInstaller 瘦身打包配置
+├── docs/                     # 用户文档
+│   ├── 使用说明.txt
+│   ├── 使用说明.html
+│   └── 1分钟上手.txt
+├── scripts/                  # 构建工具
+│   ├── HarmonicaScore.spec   # PyInstaller 瘦身打包配置
+│   └── 重新打包exe.bat       # 一键打包脚本
 ├── songs/                    # 曲谱文件夹
 ├── config.json               # 运行时自动生成
 └── README.md
@@ -41,7 +48,7 @@ harmonica-visualizer/
 ## 零基础用法（推荐）
 
 - **`三角洲口琴曲谱.exe`** —— 双击即用，不需要装 Python，不需要任何命令行操作
-- `使用说明.txt` —— 白话图文说明（对齐、按键、配色、加曲子、常见问题）
+- `docs/使用说明.txt` —— 白话图文说明（对齐、按键、配色、加曲子、常见问题）
 - `config.json` —— 用记事本打开可改透明度、面板宽度、按键绑定、曲谱文件夹等
 - `songs\` —— 曲谱文件夹（默认位置），每首一个 txt，可在面板里点选或按 Shift+F7 切换
 
@@ -51,13 +58,13 @@ exe 会自动在**它自己所在的文件夹**里读取/生成 `config.json` �
 
 ### 重新打包 exe
 
-改了代码后双击 `重新打包exe.bat`（或执行）：
+改了代码后双击 `scripts/重新打包exe.bat`（或在项目根目录执行）：
 
 ```
-python -m PyInstaller --noconfirm --distpath dist --workpath build HarmonicaScore.spec
+python -m PyInstaller --noconfirm --distpath dist --workpath build scripts/HarmonicaScore.spec
 ```
 
-用的是 `HarmonicaScore.spec`（**瘦身配置**）：程序只用到 QtCore / QtGui / QtWidgets，
+用的是 `scripts/HarmonicaScore.spec`（**瘦身配置**）：程序只用到 QtCore / QtGui / QtWidgets，
 spec 里把用不到的 Qt 二进制过滤掉，**45.8 MB → 22.2 MB**。
 
 被过滤掉的大件（都不需要）：`opengl32sw.dll`(7.7M 软件 OpenGL)、QML/Quick(5M)、
@@ -258,7 +265,7 @@ v9.3 经典模式另有"按住中"的样式（半透明 + 呼吸括号 + 上下�
 
 ## 曲谱格式（两种，自动识别）
 
-1. **自带简谱格式**：`TITLE=` / `BPM=` 头 + 数字简谱（详见 `使用说明.txt`）。
+1. **自带简谱格式**：`TITLE=` / `BPM=` 头 + 数字简谱（详见 `docs/使用说明.txt`）。
 2. **Dr-hydra 曲谱库格式（v8.2 新增）**：GitHub 项目
    [Dr-hydra/Delta-Force-Harmonica](https://github.com/Dr-hydra/Delta-Force-Harmonica)
    导出的"人可演奏版文本谱"——每小节含「简谱 / 键位 / 节奏」三行，键位为
