@@ -1,10 +1,44 @@
-# 三角洲行动 · 口琴可视化曲谱叠加层 v9.3
+# 三角洲行动 · 口琴可视化曲谱叠加层 v9.4
+
+> **v9.4：模块化重构** — 原 3000+ 行单文件拆为 10 个模块，新增 pytest 单元测试，渲染/配置/输入三处性能优化。
 
 悬浮在屏幕最顶层的半透明曲谱窗口，左侧是控制面板，右侧用圆角音符块展示三角洲口琴曲谱。
 
-## 零基础用法（推荐）
+## 项目架构（v9.4 模块化）
 
-成品在 `D:\AI\DF Harmonica\三角洲口琴曲谱_发布版\`：
+```
+harmonica-visualizer/
+├── harmonica_visualizer.py   # 入口文件（仅 20 行，调用 src.main）
+├── src/
+│   ├── __init__.py
+│   ├── constants.py          # 共享常量：按键映射、配色、面板布局
+│   ├── config.py             # 配置读写（带防抖）、路径管理、示例曲谱
+│   ├── song_parser.py        # 曲谱解析（简谱 + Dr-hydra 格式）
+│   ├── winapi.py             # Win32 VK 映射、窗口样式常量
+│   ├── utils.py              # 共享绘制工具（圆角拼接等）
+│   ├── overlay.py            # 音符叠加层（主窗口：渲染、输入轮询、演奏逻辑）
+│   ├── panel.py              # 左侧控制面板（曲谱列表、热键按钮）
+│   ├── sub_panel.py          # 主面板下方小面板（倍速/方块长度）
+│   ├── editor.py             # 曲谱编辑器（录音、编辑、保存、导入导出）
+│   └── main.py               # 入口：组装各模块、启动 Qt 事件循环、selftest
+├── tests/
+│   ├── __init__.py
+│   └── test_song_parser.py   # pytest 单元测试（34 个用例）
+├── HarmonicaScore.spec       # PyInstaller 瘦身打包配置
+├── songs/                    # 曲谱文件夹
+├── config.json               # 运行时自动生成
+└── README.md
+```
+
+### 性能优化（v9.4 新增）
+
+| 优化项 | 说明 |
+|--------|------|
+| 渲染防抖 | `_dirty` 标记 + `_has_active_animations` 检查：静止状态跳过全量重绘，CPU 占用大幅降低 |
+| 配置 I/O 防抖 | `QTimer` 延迟 1 秒合并写入 `config.json`，避免频繁修改触发 I/O；退出前 `flush_pending_saves` 确保落盘 |
+| 输入轮询优化 | `_poll_input` 返回输入变化标记，无变化时不触发重绘 |
+
+## 零基础用法（推荐）
 
 - **`三角洲口琴曲谱.exe`** —— 双击即用，不需要装 Python，不需要任何命令行操作
 - `使用说明.txt` —— 白话图文说明（对齐、按键、配色、加曲子、常见问题）
@@ -40,7 +74,7 @@ Qt6Pdf(2.5M)、Qt6Network + OpenSSL(3.4M)、Qt6OpenGL、以及一堆用不到的
 #### 打包成发布用的 zip
 
 ```bash
-python _pack_release.py        # 在 D:\AI\DF Harmonica\ 下
+python _pack_release.py
 ```
 
 把 `三角洲口琴曲谱_发布版\` 打成 `三角洲口琴曲谱_v8.zip`（约 21 MB）。
@@ -249,8 +283,16 @@ v9.3 经典模式另有"按住中"的样式（半透明 + 呼吸括号 + 上下�
 双击 `run.bat`，或：
 
 ```
-C:\Users\Admin\.workbuddy\binaries\python\envs\default\pythonw.exe harmonica_visualizer.py
+python harmonica_visualizer.py
 ```
+
+## 自检
+
+```
+python harmonica_visualizer.py --selftest
+```
+
+输出所有曲谱信息、通道按键映射、热键列表、配置项摘要，不启动 GUI。
 
 ## 热键（全局有效，均可在 config.json 中修改）
 
@@ -426,10 +468,14 @@ b3 #5 ^1 8 - 0
 | hotkeys | 全部热键可改（含 `toggle_panel`） |
 | geometry | 窗口位置与大小，自动保存 |
 
-## 自检
+## 自检与单元测试
 
-```
-C:\Users\Admin\.workbuddy\binaries\python\envs\default\Scripts\python.exe harmonica_visualizer.py --selftest
+```bash
+# 诊断：检查曲谱、配置、按键映射（不启动 GUI）
+python harmonica_visualizer.py --selftest
+
+# 单元测试：曲谱解析、组合状态、Dr-hydra 格式等（34 个用例）
+python -m pytest tests/ -v
 ```
 
 ## 开发测试脚本（`_tests/`）

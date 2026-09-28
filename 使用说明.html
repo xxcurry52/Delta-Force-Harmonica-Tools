@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三角洲口琴曲谱 · 使用说明</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --card-2: #232734;
+    --border: #2e3342;
+    --text: #e8e8ef;
+    --muted: #9aa0b0;
+    --accent: #4fc3f7;
+    --accent-2: #7e57c2;
+    --green: #66bb6a;
+    --yellow: #ffca28;
+    --red: #ef5350;
+    --code-bg: #161922;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.75;
+    padding: 0;
+  }
+  .hero {
+    background: linear-gradient(135deg, #1a1d27 0%, #2a1f3d 50%, #1a1d27 100%);
+    padding: 60px 24px 40px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  .hero h1 {
+    font-size: 2.2em;
+    font-weight: 700;
+    margin-bottom: 12px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero .version {
+    display: inline-block;
+    background: var(--accent-2);
+    color: #fff;
+    font-size: 0.8em;
+    padding: 3px 12px;
+    border-radius: 20px;
+    margin-bottom: 16px;
+  }
+  .hero p { color: var(--muted); max-width: 700px; margin: 0 auto; }
+  .container { max-width: 920px; margin: 0 auto; padding: 32px 20px 60px; }
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+  section h2 {
+    font-size: 1.4em;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  section h2 .icon {
+    width: 32px; height: 32px;
+    background: var(--accent-2);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1em;
+    flex-shrink: 0;
+  }
+  section h3 {
+    color: var(--accent);
+    margin: 20px 0 10px;
+    font-size: 1.1em;
+  }
+  p { margin-bottom: 12px; }
+  ul, ol { margin: 10px 0 16px 22px; }
+  li { margin-bottom: 6px; }
+  code {
+    background: var(--code-bg);
+    color: var(--accent);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: "Cascadia Code", "Consolas", monospace;
+    font-size: 0.9em;
+  }
+  .key {
+    display: inline-block;
+    background: var(--card-2);
+    border: 1px solid var(--border);
+    border-bottom: 2px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 9px;
+    font-family: "Consolas", monospace;
+    font-size: 0.88em;
+    color: var(--text);
+    margin: 0 2px;
+  }
+  .note {
+    background: rgba(79,195,247,0.08);
+    border-left: 3px solid var(--accent);
+    padding: 14px 18px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .warn {
+    background: rgba(255,202,40,0.08);
+    border-left: 3px solid var(--yellow);
+    padding: 14px 18px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  .danger {
+    background: rgba(239,83,80,0.08);
+    border-left: 3px solid var(--red);
+    padding: 14px 18px;
+    border-radius: 0 8px 8px 0;
+    margin: 16px 0;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th { background: var(--card-2); color: var(--accent); font-weight: 600; }
+  tr:hover { background: rgba(79,195,247,0.04); }
+  .color-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .color-card {
+    background: var(--card-2);
+    border-radius: 8px;
+    padding: 14px;
+    border-left: 4px solid;
+  }
+  .color-card .dot {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .steps {
+    counter-reset: step;
+    list-style: none;
+    margin-left: 0;
+  }
+  .steps > li {
+    counter-increment: step;
+    position: relative;
+    padding-left: 42px;
+    margin-bottom: 16px;
+  }
+  .steps > li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0; top: 0;
+    width: 30px; height: 30px;
+    background: var(--accent-2);
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+    font-size: 0.85em;
+  }
+  .mode-card {
+    background: var(--card-2);
+    border-radius: 10px;
+    padding: 20px;
+    margin: 14px 0;
+    border: 1px solid var(--border);
+  }
+  .mode-card h4 {
+    color: var(--accent);
+    margin-bottom: 8px;
+    font-size: 1.05em;
+  }
+  .tag {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.78em;
+    font-weight: 600;
+  }
+  .tag-classic { background: rgba(102,187,106,0.2); color: var(--green); }
+  .tag-follow { background: rgba(126,87,194,0.2); color: #b39ddb; }
+  footer {
+    text-align: center;
+    color: var(--muted);
+    padding: 30px 20px;
+    border-top: 1px solid var(--border);
+    font-size: 0.9em;
+  }
+  .toc {
+    background: var(--card-2);
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 28px;
+  }
+  .toc h3 { color: var(--accent); margin-top: 0; }
+  .toc ul { margin: 8px 0; }
+  .toc a { color: var(--text); text-decoration: none; }
+  .toc a:hover { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <span class="version">v9.3</span>
+  <h1>三角洲行动 · 口琴可视化曲谱叠加层</h1>
+  <p>悬浮在游戏画面顶层的半透明曲谱窗口，左侧控制面板，右侧用圆角音符块展示三角洲口琴曲谱。照着最下面那块弹就行，不用背谱。</p>
+</div>
+
+<div class="container">
+
+  <div class="toc">
+    <h3>目录</h3>
+    <ul>
+      <li><a href="#quick">1. 30 秒上手</a></li>
+      <li><a href="#keys">2. 按键与颜色对照</a></li>
+      <li><a href="#modes">3. 两种演奏模式</a></li>
+      <li><a href="#shortcuts">4. 快捷键速查</a></li>
+      <li><a href="#align">5. 首次对齐（只需一次）</a></li>
+      <li><a href="#songs">6. 曲谱管理</a></li>
+      <li><a href="#record">7. 自己录曲谱</a></li>
+      <li><a href="#config">8. 常用配置项</a></li>
+      <li><a href="#faq">9. 常见问题</a></li>
+    </ul>
+  </div>
+
+  <section id="quick">
+    <h2><span class="icon">1</span>30 秒上手</h2>
+    <ol class="steps">
+      <li>右键 <code>三角洲口琴曲谱.exe</code> → <b>以管理员身份运行</b>（绿色免安装，无需 Python）</li>
+      <li>游戏请用 <b>无边框窗口 / 窗口化</b> 显示，独占全屏会盖住悬浮窗</li>
+      <li>按 <span class="key">Shift</span>+<span class="key">F8</span>，用鼠标把窗口拖到游戏口琴按键正上方，再按一次锁定</li>
+      <li>按 <span class="key">Shift</span>+<span class="key">F9</span> 从头开始，看着最下面那块弹</li>
+    </ol>
+    <div class="warn">
+      <b>第一次运行的两个提示（正常现象）：</b><br>
+      • 杀毒软件可能误报 — 程序只做两件事：画置顶窗口 + 读键鼠状态，不联网、不读内存、不模拟按键。选择"允许运行"即可。<br>
+      • Windows 蓝色保护窗口 — 点"更多信息" → "仍要运行"（未签名 exe 都会这样提示）。
+    </div>
+  </section>
+
+  <section id="keys">
+    <h2><span class="icon">2</span>按键与颜色对照</h2>
+
+    <h3>8 个琴键 = 谱子里的 1~8</h3>
+    <table>
+      <tr><th>简谱</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8(高音1)</th></tr>
+      <tr><td>按键</td><td><span class="key">z</span></td><td><span class="key">x</span></td><td><span class="key">c</span></td><td><span class="key">v</span></td><td><span class="key">b</span></td><td><span class="key">n</span></td><td><span class="key">m</span></td><td><span class="key">,</span></td></tr>
+    </table>
+
+    <h3>音符颜色 = 要按住哪个鼠标键</h3>
+    <div class="color-grid">
+      <div class="color-card" style="border-left-color:#ffffff">
+        <span class="dot" style="background:#ffffff"></span><b>白色</b> · 本音<br><small>直接弹，不按鼠标</small>
+      </div>
+      <div class="color-card" style="border-left-color:#66bb6a">
+        <span class="dot" style="background:#66bb6a"></span><b>绿色</b> · 降调<br><small>按住鼠标左键再弹</small>
+      </div>
+      <div class="color-card" style="border-left-color:#9c27b0">
+        <span class="dot" style="background:#9c27b0"></span><b>紫色</b> · 半音<br><small>按住鼠标中键再弹</small>
+      </div>
+      <div class="color-card" style="border-left-color:#42a5f5">
+        <span class="dot" style="background:#42a5f5"></span><b>蓝色</b> · 升调<br><small>按住鼠标右键再弹</small>
+      </div>
+      <div class="color-card" style="border-left-color:#ffca28">
+        <span class="dot" style="background:#ffca28"></span><b>黄色</b> · 半音+降调<br><small>中键 + 左键</small>
+      </div>
+      <div class="color-card" style="border-left-color:#ef5350">
+        <span class="dot" style="background:#ef5350"></span><b>红色</b> · 半音+升调<br><small>中键 + 右键</small>
+      </div>
+    </div>
+  </section>
+
+  <section id="modes">
+    <h2><span class="icon">3</span>两种演奏模式</h2>
+    <p>按 <span class="key">Shift</span>+<span class="key">F5</span> 切换，面板也有按钮。</p>
+
+    <div class="mode-card">
+      <h4><span class="tag tag-classic">经典模式</span> 堆叠消除（默认）</h4>
+      <p>音符块全部从下往上堆叠，<b>最下面带白色描边的那块</b>就是当前要弹的音：</p>
+      <ul>
+        <li>按对 → 块变半透明 + "按住中"效果，<b>松手</b>才真正消失，整叠下落一层</li>
+        <li>按错 → 该通道闪红光，音符不消失，重新按对的键即可</li>
+        <li>全部弹完显示"演奏完成"，1 秒后自动从头开始</li>
+      </ul>
+      <div class="note">长音按住多久块就留多久，不会手还没松、块就飞了。想退回旧行为（按下即消失），把 <code>config.json</code> 的 <code>leader_hold_until_release</code> 改成 <code>false</code>。</div>
+    </div>
+
+    <div class="mode-card">
+      <h4><span class="tag tag-follow">跟随演奏</span> 音符按节奏下落（像音游）</h4>
+      <p>音符按真实时值从上方落下，落到窗口底部灯带（判定线）的那一刻就是该弹的时刻：</p>
+      <ol>
+        <li>切到跟随模式后不立刻开始 — 显示"弹对第一个音「x」开始"</li>
+        <li>按对第一个音 → 3 秒倒计时 → 音符开始下落</li>
+        <li>每个音都要<b>按住不放</b>才算完成：按下只算"接住了"，判定线把块一点点吃掉，整块吃光才算弹完</li>
+        <li>中途松手 → 剩下那截变暗漏过（松开 0.2 秒内又按回来不算断）</li>
+        <li>同一个键连着好几个音时，一直按着不放就行，会自动接上</li>
+      </ol>
+      <div class="note"><b>倍速调节：</b><span class="key">Shift</span>+<span class="key">↑</span> 加快 / <span class="key">Shift</span>+<span class="key">↓</span> 减慢（每次 10%，范围 20%~200%），也可点面板下方小面板的 +/− 按钮。</div>
+    </div>
+
+    <div class="note">
+      <b>小面板自动切换：</b>跟随模式 → 显示"跟随倍速"；经典/录音模式 → 显示"方块长度"（<span class="key">Shift</span>+<span class="key">↑</span> 拉长 / <span class="key">Shift</span>+<span class="key">↓</span> 缩短，50%~200%，只改长短不改宽度）。
+    </div>
+  </section>
+
+  <section id="shortcuts">
+    <h2><span class="icon">4</span>快捷键速查</h2>
+    <div class="warn">所有 F 区快捷键都要<b>按住 Shift 再按</b>（防止与游戏 F4~F12 冲突）。面板每个按钮右边也写着对应快捷键，不想背就点按钮。</div>
+    <table>
+      <tr><th>快捷键</th><th>功能</th></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F5</span></td><td>切换 经典 / 跟随演奏 模式</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F6</span></td><td>一键隐藏 / 恢复全部窗口（游戏里临时让开视野）</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F7</span></td><td>换下一首曲子</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F8</span></td><td>调整位置（拖动 / 缩放），再按一次锁定</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F9</span></td><td>从头重来</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F10</span></td><td>面板鼠标穿透（点不动了按它恢复）</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F11</span></td><td>打开曲谱编辑器（添加 / 编辑曲谱）</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F12</span></td><td>开始 / 结束录音</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">F3</span></td><td>静默保存曲谱（游戏在前台也能按）</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">↑</span></td><td>跟随=倍速+10%；经典=方块长度+10%</td></tr>
+      <tr><td><span class="key">Shift</span>+<span class="key">↓</span></td><td>跟随=倍速-10%；经典=方块长度-10%</td></tr>
+      <tr><td><span class="key">Ctrl</span>+<span class="key">Alt</span>+<span class="key">Q</span></td><td>退出程序</td></tr>
+    </table>
+    <div class="note">不想按 Shift？用记事本打开 <code>config.json</code>，把 hotkeys 里的 <code>"shift+"</code> 删掉即可退回单键。</div>
+  </section>
+
+  <section id="align">
+    <h2><span class="icon">5</span>首次对齐（只需一次，位置自动记住）</h2>
+    <ol class="steps">
+      <li>进游戏，掏出口琴，画面下方显示 8 个琴键</li>
+      <li>点面板【调整窗口】或按 <span class="key">Shift</span>+<span class="key">F8</span> — 窗口变金黄虚线框</li>
+      <li>拖动窗口到琴键正上方，拖边缘/四角缩放，让 8 条竖线与 8 个按键一一对齐</li>
+      <li>关键：把窗口底部的"灯带"细横线贴在游戏琴键区上沿</li>
+      <li>再按一次 <span class="key">Shift</span>+<span class="key">F8</span> 锁定 — 位置和大小自动存入 <code>config.json</code></li>
+    </ol>
+    <div class="note">窗口最小约 420×360，保证面板内容不被挤压。下次启动自动在原位。</div>
+  </section>
+
+  <section id="songs">
+    <h2><span class="icon">6</span>曲谱管理</h2>
+    <p>默认在程序旁边的 <code>songs</code> 文件夹，一个 <code>.txt</code> = 一首曲子。启动时自动读取全部 txt。手动丢 txt 进去也能识别。</p>
+
+    <h3>换曲谱文件夹</h3>
+    <ul>
+      <li>按 <span class="key">Shift</span>+<span class="key">F11</span> 打开曲谱编辑器</li>
+      <li>点【曲谱文件夹…】→ 选目录 → 曲谱就从那里读写了</li>
+      <li>点【打开文件夹】→ 直接弹出资源管理器</li>
+      <li>换回默认：再点【曲谱文件夹…】选回程序旁边的 songs</li>
+    </ul>
+
+    <h3>曲谱格式（简谱，很直白）</h3>
+    <table>
+      <tr><th>写法</th><th>含义</th></tr>
+      <tr><td><code>1 2 3 4 5 6 7 8</code></td><td>八个音，对应 z x c v b n m , 各占 1 拍</td></tr>
+      <tr><td>数字后加 <code>-</code></td><td>延长 1 拍（例：<code>5 - -</code> = 5 弹 3 拍）</td></tr>
+      <tr><td><code>b</code> 加在数字前</td><td>降调（例：<code>b5</code>）</td></tr>
+      <tr><td><code>#</code> 加在数字前</td><td>半音（例：<code>#2</code>）</td></tr>
+      <tr><td><code>^</code> 加在数字前</td><td>升调（例：<code>^1</code>）</td></tr>
+      <tr><td><code>0</code></td><td>休止符（停一拍）</td></tr>
+      <tr><td><code>|</code></td><td>小节线（装饰用）</td></tr>
+    </table>
+    <div class="note">文件开头可写 <code>TITLE=曲名</code> 和 <code>BPM=90</code>（BPM 当前版本用不到）。<br>也自动支持 Dr-hydra 曲谱库格式（带节奏标注，配合跟随模式体验最佳）。</div>
+
+    <h3>自带 5 首曲谱</h3>
+    <p>See You Again / 小星星 / 欢乐颂 / 父亲（筷子兄弟）/ 音域与变调练习</p>
+  </section>
+
+  <section id="record">
+    <h2><span class="icon">7</span>自己录曲谱（弹一遍就会）</h2>
+    <p>不用打字、不用懂格式：<b>自己弹一遍，程序帮你记下来。</b></p>
+    <ol class="steps">
+      <li>点面板【添加曲谱】或按 <span class="key">Shift</span>+<span class="key">F11</span>，弹出编辑器窗口</li>
+      <li>最上面填曲名</li>
+      <li>点【● 开始录音】或按 <span class="key">Shift</span>+<span class="key">F12</span> — 窗口出现红点和"录音中"</li>
+      <li>进游戏，掏出琴，把曲子按顺序弹一遍（白音直接按键，高音按住右键+按键，以此类推）</li>
+      <li>弹完按 <span class="key">Shift</span>+<span class="key">F12</span> 结束录音</li>
+      <li><b>直接按 <span class="key">Shift</span>+<span class="key">F3</span></b>（游戏前台也能按）— 曲谱存好，曲名默认"我的曲谱"</li>
+      <li>想改名/检查：按 <span class="key">Shift</span>+<span class="key">F11</span> 打开编辑器，文本框里可修改，按错了点【撤销一个音】（Ctrl+Z）</li>
+      <li>点【保存到曲谱库】或 Ctrl+S — 曲谱出现在面板列表，直接能弹</li>
+    </ol>
+    <div class="note"><b>按住键不松、只切鼠标键也算一个新音（V9.3）：</b>比如 1 #1 1，可以按住 z 不放、按一下中键再松开，程序照样记成三个音。</div>
+  </section>
+
+  <section id="config">
+    <h2><span class="icon">8</span>常用配置项</h2>
+    <p>用记事本打开 <code>config.json</code> 即可修改，改完重启程序生效。</p>
+    <table>
+      <tr><th>配置项</th><th>说明</th><th>默认值</th></tr>
+      <tr><td><code>opacity</code></td><td>窗口透明度，0.5=很淡，1=不透明</td><td>—</td></tr>
+      <tr><td><code>panel_width</code></td><td>左侧面板宽度，觉得挤就调大</td><td>168</td></tr>
+      <tr><td><code>songs_dir</code></td><td>曲谱文件夹，留空=程序旁的 songs</td><td>""</td></tr>
+      <tr><td><code>note_keys</code></td><td>8 通道绑定按键</td><td>["z"..."comma"]</td></tr>
+      <tr><td><code>mode</code></td><td>演奏模式 classic / follow</td><td>"classic"</td></tr>
+      <tr><td><code>leader_block_scale</code></td><td>经典模式音符块长度 0.5~2.0</td><td>1.0</td></tr>
+      <tr><td><code>follow_speed</code></td><td>跟随模式下落速度（像素/秒）</td><td>200</td></tr>
+      <tr><td><code>follow_rate</code></td><td>跟随模式倍速 0.2~2.0</td><td>1.0</td></tr>
+      <tr><td><code>follow_window</code></td><td>判定窗口（秒），嫌严就调大</td><td>0.20</td></tr>
+      <tr><td><code>hold_grace</code></td><td>按住时短暂松开宽限（秒）</td><td>0.20</td></tr>
+      <tr><td><code>countdown_seconds</code></td><td>跟随模式开始前倒计时</td><td>3</td></tr>
+      <tr><td><code>leader_hold_until_release</code></td><td>经典模式弹对的块是否按住才消</td><td>true</td></tr>
+      <tr><td><code>mod_change_note</code></td><td>按住键不松只切鼠标键是否算新音</td><td>true</td></tr>
+      <tr><td><code>hotkeys</code></td><td>快捷键，可用 | 设多个备选键</td><td>—</td></tr>
+    </table>
+  </section>
+
+  <section id="faq">
+    <h2><span class="icon">9</span>常见问题</h2>
+
+    <h3>Q: 按某个键没反应？</h3>
+    <p>看面板"输入检测"行：显示了"检测到：X" → 程序读到了，只是不是当前该按的键；什么都没显示 → 键没被监听，检查 <code>config.json</code> 的 <code>note_keys</code>。</p>
+
+    <h3>Q: 切到游戏里窗口就消失了？</h3>
+    <p>几乎不是程序坏了，是 Windows 画面合成被绕过。按顺序排查：</p>
+    <ol>
+      <li>游戏显示模式改「无边框窗口」<b>（改完重启游戏！）</b></li>
+      <li>Win11：设置 → 系统 → 屏幕 → 显示卡 → 关掉「窗口化游戏优化」+「自动 HDR」</li>
+      <li>游戏 exe → 属性 → 兼容性 → 勾「禁用全屏优化」</li>
+      <li>双屏/双显卡：把游戏和程序拉到同一显示器，都设为「高性能」</li>
+      <li>关掉系统 HDR 试试</li>
+      <li>关掉 MPO（多平面叠加）：注册表 <code>HKLM\SOFTWARE\Microsoft\Windows\Dwm</code> 新建 DWORD <code>OverlayTestMode=5</code>，重启电脑</li>
+    </ol>
+    <div class="note"><b>快速定位：</b>切到游戏后连按两次 <span class="key">Shift</span>+<span class="key">F6</span>。窗口回来了 → 只是被顶到下面，调环境即可；还是不出现 → 画面合成被绕过，只能改系统/游戏设置。</div>
+
+    <h3>Q: 录完按 Ctrl+S 没保存？</h3>
+    <p>Ctrl+S 只有编辑器窗口在最前面才生效。最省事：直接按 <span class="key">Shift</span>+<span class="key">F3</span>（游戏前台也能按）。</p>
+
+    <h3>Q: 快捷键和游戏冲突？</h3>
+    <p>不会。程序只"看一眼你按了什么"，不拦按键。所有 F 区快捷键都要求按住 Shift，游戏里直接按 F4~F12 时本程序完全无反应。</p>
+
+    <h3>Q: 面板挡住游戏点击了？</h3>
+    <p>右边音符区永远鼠标穿透。面板挡到的话按 <span class="key">Shift</span>+<span class="key">F10</span> 让面板也穿透。</p>
+  </section>
+
+</div>
+
+<footer>
+  <p>三角洲行动 · 口琴可视化曲谱叠加层 v9.3 · 作者：迟昼<br>
+  不安装钩子、不模拟按键、不读内存、不联网 — 只画窗口 + 读键鼠状态<br>
+  免责声明：理论无风险，但万一发生封号，与本程序作者无关。</p>
+</footer>
+
+</body>
+</html>
