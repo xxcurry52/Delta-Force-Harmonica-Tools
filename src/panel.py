@@ -5,7 +5,7 @@ from PySide6.QtGui import (QColor, QPainter, QPen, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QWidget
 
 from .constants import (KEY_DISPLAY, PANEL_ROWS, STATE_MODS, STATE_NAMES, STATE_SHORT,
-                          STRIP_COLORS, CHIP_LAYOUT)
+                          STRIP_COLORS, CHIP_LAYOUT, THEME)
 from .config import hotkey_text
 from .winapi import GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT, user32
 from .utils import square_plate_corner
@@ -148,23 +148,33 @@ class PanelWindow(QWidget):
         w, h = lay["w"], lay["h"]
         ov = self.ov
 
-        p.setPen(QPen(QColor(255, 255, 255, 16), 1))
+        # 面板背景（浅色毛玻璃底）
+        p.setPen(Qt.NoPen)
+        p.setBrush(THEME["bg_panel"])
+        p.drawRoundedRect(6.0, 6.0, w - 12.0, h - 12.0, 16.0, 16.0)
+
+        # 右侧分隔线
+        p.setPen(QPen(THEME["border_light"], 1))
         p.drawLine(QPointF(w - 1.5, 10), QPointF(w - 1.5, h - 10))
 
-        p.setPen(QColor(255, 255, 255, 245))
+        # 标题
+        p.setPen(THEME["text_primary"])
         p.setFont(QFont("Microsoft YaHei UI", 12, QFont.DemiBold))
         p.drawText(lay["title"], Qt.AlignLeft | Qt.AlignVCenter, "口琴曲谱")
 
-        p.setPen(QColor(255, 255, 255, 235))
+        # 当前曲名
+        p.setPen(THEME["text_primary"])
         p.setFont(QFont("Microsoft YaHei UI", 11, QFont.DemiBold))
         p.drawText(lay["song"], Qt.AlignLeft | Qt.AlignVCenter,
-                   self._elide(p, "♪ " + ov.song.title, iw))
-        p.setPen(QColor(255, 255, 255, 130))
+                   self._elide(p, ov.song.title, iw))
+        # 剩余进度
+        p.setPen(THEME["text_secondary"])
         p.setFont(QFont("Microsoft YaHei UI", 9))
         info = "剩余 %d / %d 音" % (max(0, len(ov.song.notes) - ov.cursor),
                                    len(ov.song.notes))
         p.drawText(lay["info"], Qt.AlignLeft | Qt.AlignVCenter, info)
 
+        # 状态指示块
         chip = lay["chips"]
         st_now = ov.current_state()
         cols = 3
@@ -178,15 +188,21 @@ class PanelWindow(QWidget):
             active = (st == st_now)
             col_c = QColor(STRIP_COLORS[st])
             if not active:
-                col_c.setAlpha(70)
-            p.setPen(QPen(QColor(255, 255, 255, 230 if active else 40), 1))
+                col_c.setAlpha(60)
+            p.setPen(Qt.NoPen)
             p.setBrush(col_c)
-            p.drawRoundedRect(r, 5, 5)
-            p.setPen(QColor(20, 20, 20, 230) if (active and st == 0)
-                     else QColor(255, 255, 255, 235 if active else 150))
+            p.drawRoundedRect(r, 6, 6)
+            if active and st in (0, 4):
+                text_c = QColor(0x0F, 0x17, 0x2A)
+            else:
+                text_c = QColor(0xFF, 0xFF, 0xFF)
+            if not active:
+                text_c.setAlpha(180)
+            p.setPen(text_c)
             p.setFont(QFont("Microsoft YaHei UI", 8, QFont.DemiBold))
             p.drawText(r, Qt.AlignCenter, STATE_SHORT[st])
 
+        # 修饰键提示
         p.setFont(QFont("Microsoft YaHei UI", 9))
         if st_now == 0:
             hint = "本音：不用按修饰键"
@@ -197,31 +213,34 @@ class PanelWindow(QWidget):
                         for n in self.cfg["modifier_keys"].get(role, ["?"])]
                 parts.append("%s+%s" % (role, "+".join(mods)))
             hint = " + ".join(parts) + "  →  %s" % STATE_NAMES[st_now]
-        p.setPen(QColor(255, 255, 255, 165))
+        p.setPen(THEME["text_secondary"])
         p.drawText(lay["modhint"], Qt.AlignLeft | Qt.AlignVCenter,
                    self._elide(p, hint, iw))
 
+        # 输入检测
         if not ov._input_ok:
-            txt, col = "输入：已关闭（config）", QColor(0xE2, 0x6D, 0x6D, 200)
+            txt, col = "输入：已关闭（config）", THEME["error"]
         elif ov._last_detect and time.monotonic() - ov._last_detect[0] < 2.5:
-            txt, col = "检测到：%s" % ov._last_detect[1], QColor(0x6D, 0xE2, 0x9B, 235)
+            txt, col = "检测到：%s" % ov._last_detect[1], THEME["success"]
         else:
-            txt, col = "输入检测：正常待命", QColor(255, 255, 255, 120)
+            txt, col = "输入检测：待命", THEME["text_muted"]
         p.setPen(col)
         p.setFont(QFont("Microsoft YaHei UI", 9))
         p.drawText(lay["input"], Qt.AlignLeft | Qt.AlignVCenter, txt)
 
+        # 曲谱列表标题
         n_songs = len(ov.songs)
         cap = lay["list_rows"]
         need_sb = n_songs > cap
         sb_w = 7.0 if need_sb else 0.0
-        p.setPen(QColor(255, 255, 255, 120))
+        p.setPen(THEME["text_secondary"])
         p.setFont(QFont("Microsoft YaHei UI", 9))
         p.drawText(lay["list_header"], Qt.AlignLeft | Qt.AlignVCenter,
-                   "曲谱列表（%d）%s" % (n_songs, "　滚轮/拖条翻页" if need_sb else ""))
+                   "曲谱列表（%d）%s" % (n_songs, "　滚轮翻页" if need_sb else ""))
         self._hit_songs = []
         self.song_scroll = max(0, min(self.song_scroll, max(0, n_songs - cap)))
 
+        # 曲谱列表
         p.save()
         p.setClipRect(lay["list_clip"])
         for k in range(cap):
@@ -233,12 +252,9 @@ class PanelWindow(QWidget):
             cur = (idx == ov.song_idx)
             if cur:
                 p.setPen(Qt.NoPen)
-                p.setBrush(QColor(255, 255, 255, 34))
-                p.drawRoundedRect(r, 5, 5)
-                p.setBrush(QColor(STRIP_COLORS[st_now]))
-                p.drawRoundedRect(QRectF(r.left() + 1.0, r.top() + 3.5,
-                                         2.5, r.height() - 7.0), 1.2, 1.2)
-            p.setPen(QColor(255, 255, 255, 240 if cur else 150))
+                p.setBrush(THEME["primary"])
+                p.drawRoundedRect(r, 8, 8)
+            p.setPen(QColor(0xFF, 0xFF, 0xFF) if cur else THEME["text_secondary"])
             p.setFont(QFont("Microsoft YaHei UI", 9,
                             QFont.DemiBold if cur else QFont.Normal))
             tw = r.width() - 14.0 - sb_w
@@ -247,6 +263,7 @@ class PanelWindow(QWidget):
                        self._elide(p, "%d. %s" % (idx + 1, ov.songs[idx].title), tw))
         p.restore()
 
+        # 滚动条
         self._hit_scrollbar = None
         if need_sb:
             track = QRectF(w - pad - 5.0, lay["list_top"] + 1.0,
@@ -257,16 +274,17 @@ class PanelWindow(QWidget):
             thumb = QRectF(track.left(), track.top() + (track.height() - thumb_h) * t,
                            track.width(), thumb_h)
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor(255, 255, 255, 30))
-            p.drawRoundedRect(track, 2.5, 2.5)
+            p.setBrush(THEME["bg_muted"])
+            p.drawRoundedRect(track, 3, 3)
             hot = bool(self._sb_drag) or self._scrollbar_hot
-            p.setBrush(QColor(255, 255, 255, 190 if hot else 120))
-            p.drawRoundedRect(thumb, 2.5, 2.5)
+            p.setBrush(THEME["text_muted"] if hot else THEME["border"])
+            p.drawRoundedRect(thumb, 3, 3)
             self._hit_scrollbar = {"track": track, "thumb": thumb}
 
-        p.setPen(QColor(255, 255, 255, 120))
+        # 热键按钮区标题
+        p.setPen(THEME["text_secondary"])
         p.setFont(QFont("Microsoft YaHei UI", 9))
-        p.drawText(lay["btn_header"], Qt.AlignLeft | Qt.AlignVCenter, "热键（都要按住 Shift）")
+        p.drawText(lay["btn_header"], Qt.AlignLeft | Qt.AlignVCenter, "热键")
         self._hit_buttons = []
         y = lay["btn_top"]
         for row in PANEL_ROWS:
@@ -277,13 +295,17 @@ class PanelWindow(QWidget):
                 r = QRectF(pad + j * (bw + gap), y, bw, lay["btn_h"])
                 label, active = self._button_label(action)
                 hover = (self.hover_action == action)
-                base = QColor(255, 255, 255, 26 if not active else 70)
-                if hover:
-                    base = QColor(255, 255, 255, 52 if not active else 96)
-                p.setPen(QPen(QColor(255, 255, 255, 90 if active else 45), 1))
-                p.setBrush(base)
-                p.drawRoundedRect(r, 6, 6)
-                p.setPen(QColor(255, 255, 255, 250 if active else 225))
+                if active:
+                    bg = THEME["primary"]
+                elif hover:
+                    bg = THEME["bg_hover"]
+                else:
+                    bg = THEME["bg_card"]
+                p.setPen(Qt.NoPen)
+                p.setBrush(bg)
+                p.drawRoundedRect(r, 10, 10)
+                text_c = QColor(0xFF, 0xFF, 0xFF) if active else THEME["text_primary"]
+                p.setPen(text_c)
                 p.setFont(QFont("Microsoft YaHei UI", 9, QFont.DemiBold))
                 hint = self._hotkey_hint(action)
                 hint_w = 0.0
@@ -300,7 +322,8 @@ class PanelWindow(QWidget):
                            Qt.AlignLeft | Qt.AlignVCenter,
                            self._elide(p, label, r.width() - 16.0 - hint_w))
                 if hint:
-                    p.setPen(QColor(255, 255, 255, 130))
+                    hint_c = QColor(0xFF, 0xFF, 0xFF, 180) if active else THEME["text_muted"]
+                    p.setPen(hint_c)
                     p.setFont(QFont("Microsoft YaHei UI", 8))
                     p.drawText(QRectF(r.left(), r.top(), r.width() - 8.0, r.height()),
                                Qt.AlignRight | Qt.AlignVCenter,

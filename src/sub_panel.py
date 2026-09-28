@@ -3,6 +3,7 @@ from PySide6.QtGui import QColor, QPainter, QPen, QFont, QFontMetrics, QPainterP
 from PySide6.QtWidgets import QApplication, QWidget
 
 from .config import hotkey_text
+from .constants import THEME
 from .winapi import GWL_EXSTYLE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TRANSPARENT, user32
 
 
@@ -64,7 +65,7 @@ class SubPanel(QWidget):
                 "hotkeys": ("rate_down", "rate_up"),
                 "labels": ("− 减慢", "＋ 加快"),
                 "words": ("减慢", "加快"),
-                "accent": QColor(0x9B, 0xD8, 0xFF),
+                "accent": THEME["primary"],
             }
         return {
             "kind": "block",
@@ -75,7 +76,7 @@ class SubPanel(QWidget):
             "hotkeys": ("rate_down", "rate_up"),
             "labels": ("− 缩短", "＋ 拉长"),
             "words": ("缩短", "拉长"),
-            "accent": QColor(0xF3, 0xC9, 0x7E),
+            "accent": THEME["success"],
         }
 
     def _btn_rects(self):
@@ -110,39 +111,38 @@ class SubPanel(QWidget):
         path.addRect(QRectF(1.0, 0.0, 12.0, 12.0))
         p.setClipPath(path)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(24, 22, 19, int(self.cfg.get("bg_alpha", 150))))
+        bg = QColor(THEME["bg_deep"])
+        bg.setAlpha(int(self.cfg.get("bg_alpha", 150)))
+        p.setBrush(bg)
         p.drawRect(QRectF(0, 0, w, h))
         p.setClipping(False)
-        p.setPen(QPen(QColor(255, 255, 255, 16), 1))
+        p.setPen(QPen(THEME["border_light"], 1))
         p.drawLine(QPointF(self.PAD, 1.5), QPointF(w - self.PAD, 1.5))
 
         v = self._view()
         val, lo, hi = v["value"], v["lo"], v["hi"]
         accent = v["accent"]
 
-        p.setPen(QColor(255, 255, 255, 240))
+        p.setPen(THEME["text_primary"])
         p.setFont(QFont("Microsoft YaHei UI", 10, QFont.DemiBold))
         p.drawText(QRectF(self.PAD, 9.0, iw * 0.55, 16.0),
                    Qt.AlignLeft | Qt.AlignVCenter, v["title"])
-        c = QColor(accent)
-        c.setAlpha(245)
-        p.setPen(c)
+        p.setPen(accent)
         p.setFont(QFont("Microsoft YaHei UI", 12, QFont.Bold))
         p.drawText(QRectF(self.PAD, 9.0, iw, 16.0),
                    Qt.AlignRight | Qt.AlignVCenter, "%d%%" % round(val * 100))
 
         track = QRectF(self.PAD, 29.0, iw, 6.0)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(255, 255, 255, 28))
+        p.setBrush(THEME["bg_muted"])
         p.drawRoundedRect(track, 3, 3)
         k = max(0.0, min(1.0, (val - lo) / (hi - lo)))
         bar = QColor(accent)
-        bar.setAlpha(205)
         p.setBrush(bar)
         p.drawRoundedRect(QRectF(track.left(), track.top(),
                                  max(4.0, track.width() * k), track.height()), 3, 3)
         mid = track.left() + track.width() * ((1.0 - lo) / (hi - lo))
-        p.setPen(QPen(QColor(255, 255, 255, 95), 1))
+        p.setPen(QPen(THEME["border"], 1))
         p.drawLine(QPointF(mid, track.top() - 2.0), QPointF(mid, track.bottom() + 2.0))
 
         self._hit_buttons = []
@@ -150,16 +150,17 @@ class SubPanel(QWidget):
         for i, (action, r) in enumerate(rects):
             label = v["labels"][i]
             hover = (self.hover_action == action)
-            p.setPen(QPen(QColor(255, 255, 255, 60), 1))
-            p.setBrush(QColor(255, 255, 255, 58 if hover else 26))
+            bg = THEME["bg_hover"] if hover else THEME["bg_card"]
+            p.setPen(Qt.NoPen)
+            p.setBrush(bg)
             p.drawRoundedRect(r, 6, 6)
-            p.setPen(QColor(255, 255, 255, 235))
+            p.setPen(THEME["text_primary"])
             p.setFont(QFont("Microsoft YaHei UI", 9, QFont.DemiBold))
             p.drawText(r, Qt.AlignCenter, label)
             self._hit_buttons.append((r, action))
 
         hint = self._hint_text()
-        p.setPen(QColor(255, 255, 255, 120))
+        p.setPen(THEME["text_muted"])
         p.setFont(QFont("Microsoft YaHei UI", 8))
         p.drawText(QRectF(self.PAD, 71.0, iw, 13.0), Qt.AlignLeft | Qt.AlignVCenter,
                    self._elide(p, hint, iw))

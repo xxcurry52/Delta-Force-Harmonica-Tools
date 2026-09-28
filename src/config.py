@@ -114,7 +114,7 @@ TITLE=See You Again
 
 DEFAULT_CONFIG = {
     "opacity": 0.94,
-    "bg_alpha": 150,
+    "bg_alpha": 235,
     "hit_line_offset": 10,
     "panel_width": 168,
     "panel_interactive": True,

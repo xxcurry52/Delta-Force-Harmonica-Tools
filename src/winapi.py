@@ -22,8 +22,42 @@ GWL_EXSTYLE = -20
 WS_EX_LAYERED = 0x00080000
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_NOACTIVATE = 0x08000000
+WS_EX_TOPMOST = 0x00000008
+WS_EX_TOOLWINDOW = 0x00000080
+
+HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
+SWP_NOMOVE = 0x0002
+SWP_NOSIZE = 0x0001
+SWP_NOACTIVATE = 0x0010
+SWP_SHOWWINDOW = 0x0040
 
 user32 = ctypes.windll.user32
+
+# SetWindowPos 参数类型
+user32.SetWindowPos.argtypes = [
+    ctypes.c_void_p, ctypes.c_void_p,
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+    ctypes.c_uint,
+]
+user32.SetWindowPos.restype = ctypes.c_int
+user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+user32.GetWindowLongW.restype = ctypes.c_long
+user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
+user32.SetWindowLongW.restype = ctypes.c_long
+
+
+def force_topmost(hwnd):
+    """强制窗口置顶，在游戏全屏时也能显示在最上层"""
+    if not hwnd:
+        return
+    # 先添加 TOPMOST 扩展样式
+    ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    ex |= WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW
+    user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex)
+    # 再调用 SetWindowPos 确保实际上在最上层
+    user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
 
 
 def vk_of(name):

@@ -80,6 +80,7 @@ class SongEditor(QWidget):
         self.clear_btn = QPushButton("清空")
         self.load_btn = QPushButton("载入当前曲谱")
         self.import_btn = QPushButton("从文件导入…")
+        self.midi_btn = QPushButton("导入 MIDI…")
         self.save_btn = QPushButton("保存到曲谱库（Ctrl+S / %s）" % self.ov.hk("save_song"))
         self.export_btn = QPushButton("导出为文件…")
         self.folder_btn = QPushButton("曲谱文件夹…")
@@ -87,7 +88,7 @@ class SongEditor(QWidget):
         self.rec_btn.setStyleSheet("font-weight:600;")
 
         lay.addLayout(self._row(self.rec_btn, self.undo_btn, self.clear_btn))
-        lay.addLayout(self._row(self.load_btn, self.import_btn))
+        lay.addLayout(self._row(self.load_btn, self.import_btn, self.midi_btn))
         lay.addLayout(self._row(self.save_btn, self.export_btn))
         lay.addLayout(self._row(self.folder_btn, self.open_btn))
 
@@ -100,6 +101,7 @@ class SongEditor(QWidget):
         self.clear_btn.clicked.connect(self.clear_all)
         self.load_btn.clicked.connect(self.load_current)
         self.import_btn.clicked.connect(self.import_file)
+        self.midi_btn.clicked.connect(self.import_midi)
         self.save_btn.clicked.connect(self.save_to_library)
         self.export_btn.clicked.connect(self.export_file)
         self.folder_btn.clicked.connect(self.choose_folder)
@@ -153,7 +155,8 @@ class SongEditor(QWidget):
             "font-weight:600; background:#e24b4b; color:white;" if on
             else "font-weight:600;")
         self.text.setReadOnly(on)
-        for w in (self.name_edit, self.clear_btn, self.load_btn, self.import_btn):
+        for w in (self.name_edit, self.clear_btn, self.load_btn, self.import_btn,
+                  self.midi_btn):
             w.setEnabled(not on)
         self._refresh_status()
 
@@ -240,6 +243,34 @@ class SongEditor(QWidget):
         self.text.setPlainText(clean_song_body(text) + "\n")
         self.name_edit.setText(title)
         self.status.setText("已导入：%s" % path)
+
+    def import_midi(self):
+        try:
+            from .midi_import import import_midi, notes_to_song_text
+        except ImportError:
+            QMessageBox.warning(self, "缺少依赖",
+                                 "导入 MIDI 需要安装 mido 库：\npip install mido")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "导入 MIDI 文件", SONGS_DIR,
+            "MIDI 文件 (*.mid *.midi);;所有文件 (*.*)")
+        if not path:
+            return
+        try:
+            title, bpm, notes = import_midi(path)
+        except Exception as e:
+            QMessageBox.warning(self, "MIDI 导入失败", str(e))
+            return
+        if not notes:
+            QMessageBox.information(self, "没有音符",
+                                    "这个 MIDI 文件里没有找到可识别的音符。")
+            return
+        text = notes_to_song_text(title, bpm, notes)
+        self.text.setPlainText(text)
+        self.name_edit.setText(title)
+        self.status.setText("已导入 MIDI：%s（%d 个音，BPM %d）"
+                            % (path, len(notes), round(bpm)))
+        self.status.setStyleSheet("color:#2a7; font-weight:600;")
 
     def export_file(self):
         body = clean_song_body(self.text.toPlainText())

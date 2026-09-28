@@ -1,23 +1,25 @@
 import math
 import time
 
-from PySide6.QtCore import Qt, QTimer, QRectF, QPointF
+from PySide6.QtCore import Qt, QTimer, QRectF, QPointF, Signal
 from PySide6.QtGui import (QColor, QPainter, QPen, QFont, QFontMetrics, QPainterPath,
                            QBrush, QRadialGradient)
 from PySide6.QtWidgets import QApplication, QWidget
 
 from .constants import (KEY_LABELS, DEFAULT_NOTE_KEYS, STATE_STYLE, STRIP_COLORS,
-                         STATE_MODS, MOD_ROLES, REC_KEEP, REC_KEEP_WANT,
+                         THEME, STATE_MODS, MOD_ROLES, REC_KEEP, REC_KEEP_WANT,
                          combo_state)
 from .config import (CONFIG_PATH, SONGS_DIR, DEFAULT_SONGS_DIR, schedule_save,
                       flush_pending_saves, hotkey_text)
 from .song_parser import (load_songs, parse_song, note_token)
 from .winapi import (vk_of, vk_name, GWL_EXSTYLE, WS_EX_LAYERED,
-                      WS_EX_TRANSPARENT, WS_EX_NOACTIVATE, user32)
+                      WS_EX_TRANSPARENT, WS_EX_NOACTIVATE, user32, force_topmost)
 from .utils import square_plate_corner
 
 
 class Overlay(QWidget):
+    close_requested = Signal()
+
     def __init__(self, cfg, songs, panel=None):
         super().__init__(None,
                          Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
@@ -39,6 +41,8 @@ class Overlay(QWidget):
         self.follow_state = "idle"
         self.follow_t0 = None
         self.follow_next = 0
+        self._paused = False
+        self._pause_time = None
         self.follow_missed = set()
         self.follow_hold = None
         self.follow_fade = set()
@@ -52,6 +56,7 @@ class Overlay(QWidget):
         self.adjust_mode = False
         self._drag = None
         self._resize_dir = None
+        self._resize_start_geo = None
         self._toast = None
 
         self.editor = None
@@ -132,12 +137,37 @@ class Overlay(QWidget):
         self.follow_state = "idle"
         self.follow_t0 = None
         self.follow_next = 0
+        self._paused = False
+        self._pause_time = None
         self.follow_missed.clear()
         self.follow_hold = None
         self.follow_fade.clear()
         self.countdown_deadline = None
         if self.panel:
             self.panel.ensure_visible()
+        self._dirty = True
+
+    def toggle_adjust(self):
+        self.set_adjust_mode(not self.adjust_mode)
+
+    def toggle_record(self):
+        self.set_recording(not self.recording)
+
+    def toggle_pause(self):
+        if self.mode == "follow":
+            if not self._paused and self.follow_state == "playing":
+                self._paused = True
+                self._pause_time = time.monotonic()
+            elif self._paused:
+                pause_dur = time.monotonic() - self._pause_time
+                if self.follow_t0 is not None:
+                    self.follow_t0 += pause_dur
+                if self.countdown_deadline is not None:
+                    self.countdown_deadline += pause_dur
+                self._paused = False
+                self._pause_time = None
+        else:
+            self.reset_playback()
         self._dirty = True
 
     def reload_songs(self, select_title=None):
@@ -165,12 +195,7 @@ class Overlay(QWidget):
         return max(126.0, min(want, w * 0.46))
 
     def sync_panel(self):
-        if not self.panel:
-            return
-        self.panel.setGeometry(self.x(), self.y(),
-                               int(self._panel_width()), self.height())
-        if self.sub:
-            self.sub.sync_geometry()
+        pass
 
     def moveEvent(self, e):
         self.sync_panel()
@@ -178,6 +203,7 @@ class Overlay(QWidget):
 
     def resizeEvent(self, e):
         self.sync_panel()
+        self._dirty = True
         super().resizeEvent(e)
 
     def _apply_clickthrough(self):
@@ -185,13 +211,30 @@ class Overlay(QWidget):
             hwnd = int(self.winId())
             style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
             style |= WS_EX_LAYERED | WS_EX_NOACTIVATE
-            if self.adjust_mode:
-                style &= ~WS_EX_TRANSPARENT
-            else:
+            # 不再整窗穿透——需要边框和拖拽条可交互
+            # 只在完全隐藏时穿透
+            if not self.isVisible():
                 style |= WS_EX_TRANSPARENT
+            else:
+                style &= ~WS_EX_TRANSPARENT
             user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            force_topmost(hwnd)
         except Exception as e:
             print("[overlay] 设置窗口样式失败:", e)
+
+    def _force_topmost(self):
+        """周期性强制置顶，防止被游戏窗口覆盖"""
+        try:
+            hwnd = int(self.winId())
+            force_topmost(hwnd)
+            if self.panel and self.panel.isVisible():
+                phwnd = int(self.panel.winId())
+                force_topmost(phwnd)
+            if self.sub and self.sub.isVisible():
+                shwnd = int(self.sub.winId())
+                force_topmost(shwnd)
+        except Exception:
+            pass
 
     def set_adjust_mode(self, on):
         self.adjust_mode = on
@@ -663,7 +706,12 @@ class Overlay(QWidget):
         self._last = mono
         input_changed = self._poll_input()
 
-        if self.mode == "follow":
+        # 每 2 秒强制置顶，防止被游戏窗口覆盖
+        if not hasattr(self, '_topmost_timer') or mono - getattr(self, '_last_topmost', 0) > 2.0:
+            self._last_topmost = mono
+            self._force_topmost()
+
+        if self.mode == "follow" and not self._paused:
             if self.follow_state == "countdown" and self.countdown_deadline is not None:
                 if mono >= self.countdown_deadline:
                     first = (self.song.notes[0][0] * self._follow_spb()
@@ -698,7 +746,7 @@ class Overlay(QWidget):
     def _note_geometry(self):
         w = float(self.width())
         pad = 8.0
-        x0 = self._panel_width() + pad
+        x0 = pad
         ch_w = max(12.0, (w - x0 - pad) / 8.0)
         return x0, ch_w, pad
 
@@ -706,27 +754,98 @@ class Overlay(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = float(self.width()), float(self.height())
-        x0, ch_w, pad = self._note_geometry()
-        hit_y = h - float(self.cfg.get("hit_line_offset", 10))
 
-        plate = QPainterPath()
-        plate.addRoundedRect(QRectF(0.5, 0.5, w - 1, h - 1), 12, 12)
-        if self.sub is not None and self.sub.isVisible():
-            if self.sub.y() >= self.y() + self.height() - 4:
-                plate = square_plate_corner(plate, w, h, "bl")
-            elif self.sub.y() + self.sub.height() <= self.y() + 4:
-                plate = square_plate_corner(plate, w, h, "tl")
-        p.setPen(QPen(QColor(255, 255, 255, 60), 1))
-        p.setBrush(QColor(24, 22, 19, int(self.cfg.get("bg_alpha", 150))))
-        p.drawPath(plate)
+        # 全屏音符区（不再有左侧面板偏移）
+        pad = 8.0
+        x0 = pad
+        ch_w = max(12.0, (w - x0 - pad) / 8.0)
 
-        p.setPen(QPen(QColor(255, 255, 255, 22), 1))
+        # 字体大小：Accessible & Ethical 风格 — 大字体高可读性
+        font_title = 13
+        font_legend = 11
+        font_key = 14
+
+        # 背景：浅色半透明 — Accessible & Ethical 风格
+        bg_alpha = int(self.cfg.get("bg_alpha", 235))
+        bg = QColor(239, 246, 255)  # #EFF6FF
+        bg.setAlpha(bg_alpha)
+        p.setBrush(bg)
+        p.setPen(Qt.NoPen)
+        p.drawRoundedRect(QRectF(0, 0, w, h), 10, 10)
+
+        # 顶部拖拽条
+        bar_h = 36.0
+        bar_bg = QColor(30, 64, 175)  # #1E40AF primary blue
+        bar_bg.setAlpha(240)
+        p.setBrush(bar_bg)
+        p.setPen(Qt.NoPen)
+        p.drawRoundedRect(QRectF(0, 0, w, bar_h), 10, 10)
+        # 底部直角覆盖
+        p.drawRect(QRectF(0, bar_h - 10, w, 10))
+
+        # 拖拽条文字
+        p.setPen(QColor(255, 255, 255))
+        p.setFont(QFont("Microsoft YaHei UI", font_title, QFont.Bold))
+        p.drawText(QRectF(14, 0, w - 100, bar_h), Qt.AlignVCenter | Qt.AlignLeft,
+                   "口琴可视化 · 拖动这里移动")
+
+        # 关闭按钮
+        close_x = w - 24
+        close_y = bar_h / 2
+        p.setPen(QColor(255, 255, 255))
+        p.setFont(QFont("Consolas", 16, QFont.Bold))
+        p.drawText(QRectF(close_x - 12, 0, 24, bar_h), Qt.AlignCenter, "×")
+
+        # 音调图例（拖拽条下方）
+        leg_y = bar_h + 4
+        leg_h = 24.0
+        legends = [
+            (STATE_STYLE[0]["fill"], "本音"),
+            (STATE_STYLE[1]["fill"], "降调"),
+            (STATE_STYLE[2]["fill"], "半音"),
+            (STATE_STYLE[3]["fill"], "升调"),
+        ]
+        lx = 12.0
+        for color, label in legends:
+            p.setPen(Qt.NoPen)
+            p.setBrush(color)
+            p.drawEllipse(QPointF(lx + 6, leg_y + leg_h / 2), 5, 5)
+            p.setPen(QColor(30, 58, 138))  # #1E3A8A foreground
+            p.setFont(QFont("Microsoft YaHei UI", font_legend, QFont.Medium))
+            p.drawText(QRectF(lx + 14, leg_y, 56, leg_h), Qt.AlignVCenter | Qt.AlignLeft, label)
+            lx += 72
+
+        # 按键提示标签（右上角）
+        p.setPen(QColor(71, 85, 105))  # #475569 muted foreground
+        p.setFont(QFont("Microsoft YaHei UI", font_legend))
+        p.drawText(QRectF(w - 220, leg_y, 208, leg_h), Qt.AlignVCenter | Qt.AlignRight,
+                   "键位：z x c v b n m ,")
+
+        # 音符区域
+        label_h = 24.0
+        hit_y = h - label_h - float(self.cfg.get("hit_line_offset", 10))
+
+        # 通道背景线（极淡）
+        p.setPen(QPen(QColor(30, 64, 175, 20), 1))
         for i in range(1, 8):
             x = x0 + i * ch_w
-            p.drawLine(QPointF(x, 8), QPointF(x, hit_y))
+            p.drawLine(QPointF(x, bar_h + leg_h + 4), QPointF(x, hit_y - 2))
 
+        # 判定线 — 高对比度
+        p.setPen(QPen(QColor(30, 64, 175), 3))
+        p.drawLine(QPointF(x0, hit_y), QPointF(w - pad, hit_y))
+
+        # 底部按键标签
+        p.setPen(QColor(30, 58, 138))  # #1E3A8A
+        p.setFont(QFont("Consolas", font_key, QFont.Bold))
+        for ch in range(8):
+            p.drawText(QRectF(x0 + ch * ch_w, hit_y + 4, ch_w, 20),
+                       Qt.AlignCenter, KEY_LABELS[ch])
+
+        # 绘制音符
         p.save()
-        p.setClipRect(QRectF(x0 - 3, 0, w - x0 + 3, hit_y))
+        clip_top = bar_h + leg_h + 4
+        p.setClipRect(QRectF(x0 - 3, clip_top, w - x0 + 3, hit_y - clip_top))
         if self.recording:
             self._draw_recording(p, x0, ch_w, hit_y)
         elif self.mode == "follow":
@@ -735,10 +854,11 @@ class Overlay(QWidget):
             self._draw_leader(p, x0, ch_w, hit_y)
         p.restore()
 
-        self._draw_strip(p, x0, w, hit_y)
-        self._draw_wrong(p, x0, ch_w, hit_y)
-        self._draw_toast(p, x0, w)
-        self._draw_adjust_hint(p, x0, w, h, hit_y)
+        # 调整模式提示
+        if self.adjust_mode:
+            p.setPen(QPen(QColor(240, 163, 60, 200), 2, Qt.DashLine))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(QRectF(2, 2, w - 4, h - 4), 10, 10)
 
     def _draw_wrong(self, p, x0, ch_w, hit_y):
         now = time.monotonic()
@@ -755,52 +875,34 @@ class Overlay(QWidget):
 
     def _draw_block(self, p, rect, state, ch, highlight=False):
         style = STATE_STYLE[state]
-        r = min(12.0, rect.height() / 2.0, rect.width() / 2.0)
+        r = min(8.0, rect.height() / 2.0, rect.width() / 2.0)
         p.setPen(Qt.NoPen)
         p.setBrush(style["fill"])
         p.drawRoundedRect(rect, r, r)
-        if rect.height() > 10.0:
-            p.setPen(QPen(QColor(255, 255, 255, 70), 1))
-            p.drawLine(QPointF(rect.left() + r, rect.top() + 1.0),
-                       QPointF(rect.right() - r, rect.top() + 1.0))
         if highlight:
-            p.setPen(QPen(QColor(255, 255, 255, 235), 2))
+            p.setPen(QPen(QColor(0xF5, 0xA6, 0x23), 3))
             p.setBrush(Qt.NoBrush)
             p.drawRoundedRect(rect.adjusted(-2, -2, 2, 2), r + 2, r + 2)
             p.setPen(Qt.NoPen)
-        fsize = int(max(10.0, min(rect.width() * 0.62, rect.height() * 0.5, 30.0)))
+        fsize = int(max(12.0, min(rect.width() * 0.55, rect.height() * 0.45, 32.0)))
         p.setPen(style["text"])
         p.setFont(QFont("Consolas", fsize, QFont.Bold))
         p.drawText(rect, Qt.AlignCenter, KEY_LABELS[ch])
 
     def _draw_block_held(self, p, rect, state, ch, held):
         style = STATE_STYLE[state]
-        r = min(12.0, rect.height() / 2.0, rect.width() / 2.0)
-        base = QColor(style["fill"])
-
-        fill = QColor(base)
-        fill.setAlpha(105)
+        r = min(8.0, rect.height() / 2.0, rect.width() / 2.0)
+        fill = QColor(style["fill"])
+        fill.setAlpha(100)
         p.setPen(Qt.NoPen)
         p.setBrush(fill)
         p.drawRoundedRect(rect, r, r)
-
-        k = abs(((held * 0.9) % 2.0) - 1.0)
-        ring = QColor(base)
-        ring.setAlpha(int(110 + 130 * k))
-        p.setPen(QPen(ring, 2.0))
+        p.setPen(QPen(QColor(style["fill"]), 2))
         p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(rect.adjusted(-1.5, -1.5, 1.5, 1.5), r + 1.5, r + 1.5)
-
-        if rect.height() > 12.0:
-            span = rect.height() - 6.0
-            yy = rect.bottom() - 3.0 - span * k
-            band = QColor(255, 255, 255, int(70 + 90 * k))
-            p.setPen(QPen(band, 2.0, Qt.SolidLine, Qt.RoundCap))
-            p.drawLine(QPointF(rect.left() + 3.0, yy), QPointF(rect.right() - 3.0, yy))
-
-        fsize = int(max(10.0, min(rect.width() * 0.62, rect.height() * 0.5, 30.0)))
+        p.drawRoundedRect(rect.adjusted(-1, -1, 1, 1), r + 1, r + 1)
+        fsize = int(max(12.0, min(rect.width() * 0.55, rect.height() * 0.45, 32.0)))
         txt = QColor(style["text"])
-        txt.setAlpha(170)
+        txt.setAlpha(160)
         p.setPen(txt)
         p.setFont(QFont("Consolas", fsize, QFont.Bold))
         p.drawText(rect, Qt.AlignCenter, KEY_LABELS[ch])
@@ -837,7 +939,7 @@ class Overlay(QWidget):
 
     def _draw_leader(self, p, x0, ch_w, hit_y):
         unit = self._leader_unit()
-        gap = 6.0
+        gap = 4.0
         shift = 0.0
         if self.slide:
             t0, dist = self.slide
@@ -852,7 +954,7 @@ class Overlay(QWidget):
         hold = self.held_press
         for idx, (start, dur, ch, st) in enumerate(self.song.notes[self.cursor:]):
             bh = unit * dur
-            rect = QRectF(x0 + ch * ch_w + ch_w * 0.22, y - bh, ch_w * 0.56, bh)
+            rect = QRectF(x0 + ch * ch_w + ch_w * 0.1, y - bh, ch_w * 0.80, bh)
             if rect.bottom() < 0:
                 break
             if idx == 0 and hold is not None and hold[1] == ch:
@@ -861,41 +963,11 @@ class Overlay(QWidget):
                 self._draw_block(p, rect, st, ch, highlight=(idx == 0))
             y -= bh + gap
 
-        if self.ghost:
-            t0, ch, st, gh = self.ghost
-            age = time.monotonic() - t0
-            if age > 0.24:
-                self.ghost = None
-            else:
-                k = age / 0.24
-                fill = QColor(STATE_STYLE[st]["fill"])
-                fill.setAlpha(int(180 * (1 - k)))
-                p.setPen(Qt.NoPen)
-                p.setBrush(fill)
-                bw = ch_w * 0.56
-                bx = x0 + ch * ch_w + ch_w * 0.22
-                p.drawRoundedRect(QRectF(bx, hit_y - 4 - gh * (1 - k), bw, gh * (1 - k)),
-                                  min(12.0, gh / 2), min(12.0, gh / 2))
-
-        now = time.monotonic()
-        for ch, (t0, st) in list(self.flashes.items()):
-            age = now - t0
-            if age > 0.35:
-                self.flashes.pop(ch, None)
-                continue
-            c = QColor(STATE_STYLE[st]["fill"])
-            c.setAlpha(int(150 * (1 - age / 0.35)))
-            p.setPen(Qt.NoPen)
-            p.setBrush(c)
-            p.drawRoundedRect(QRectF(x0 + ch * ch_w + 2, hit_y - 5, ch_w - 4, 10), 4, 4)
-
-        self._draw_impacts(p, x0, ch_w, hit_y)
-
         if self.finished_at is not None:
-            p.setPen(QColor(255, 255, 255, 220))
-            p.setFont(QFont("Microsoft YaHei UI", 14, QFont.DemiBold))
-            p.drawText(QRectF(x0, hit_y * 0.42, self.width() - x0, 30),
-                       Qt.AlignCenter, "演奏完成")
+            p.setPen(QColor(22, 163, 74))
+            p.setFont(QFont("Microsoft YaHei UI", 13, QFont.Bold))
+            p.drawText(QRectF(x0, hit_y * 0.4, self.width() - x0, 24),
+                       Qt.AlignCenter, "完成")
 
     def _draw_recording(self, p, x0, ch_w, hit_y):
         w = float(self.width())
@@ -903,56 +975,36 @@ class Overlay(QWidget):
 
         pulse = 0.55 + 0.45 * abs(((now * 1.6) % 2.0) - 1.0)
         p.setPen(Qt.NoPen)
-        top = 14.0
-        p.setBrush(QColor(255, 255, 255, 26))
-        p.drawRoundedRect(QRectF(x0, top, w - x0 - 8.0, 62.0), 10, 10)
-        p.setBrush(QColor(0xE2, 0x4B, 0x4B, int(60 + 195 * pulse)))
-        p.drawEllipse(QPointF(x0 + 22.0, top + 21.0), 6.0, 6.0)
-        p.setPen(QColor(255, 255, 255, 240))
-        p.setFont(QFont("Microsoft YaHei UI", 12, QFont.DemiBold))
-        p.drawText(QRectF(x0 + 36.0, top + 8.0, w - x0 - 50.0, 26.0),
-                   Qt.AlignLeft | Qt.AlignVCenter, "录音中")
-        p.setPen(QColor(255, 255, 255, 175))
-        p.setFont(QFont("Microsoft YaHei UI", 9))
-        p.drawText(QRectF(x0 + 12.0, top + 34.0, w - x0 - 24.0, 22.0),
-                   Qt.AlignLeft | Qt.AlignVCenter,
-                   "按顺序弹一遍按键（z x c v b n m ,）· 鼠标左=绿 中=紫 右=蓝 中+左=黄 中+右=红 · "
-                   "已录 %d 个音 · %s 结束" % (self.rec_count, self.hk("toggle_record")))
+        p.setBrush(QColor(0xE2, 0x4B, 0x4B, int(180 + 75 * pulse)))
+        p.drawEllipse(QPointF(x0 + 10.0, 14.0), 4.0, 4.0)
+        p.setPen(QColor(30, 58, 138))
+        p.setFont(QFont("Microsoft YaHei UI", 10, QFont.Bold))
+        p.drawText(QRectF(x0 + 20.0, 6.0, w - x0 - 30.0, 20.0),
+                   Qt.AlignLeft | Qt.AlignVCenter, "录音中 · 已录 %d 音 · %s 结束"
+                   % (self.rec_count, self.hk("toggle_record")))
 
         unit = 30.0 * self._leader_scale()
         gap = 4.0
         avail = max(60.0, w - x0 - 16.0)
         cap = max(1, int((avail + gap) // (unit + gap)))
         tail = self.rec_log[-cap:] if self.rec_log else []
-        ty = hit_y - unit - 16.0
+        ty = hit_y - unit - 12.0
         bx = w - 8.0 - len(tail) * (unit + gap) + gap
         for i, (ch, st) in enumerate(tail):
             r = QRectF(bx + i * (unit + gap), ty, unit, unit)
             style = STATE_STYLE[st]
-            p.setPen(QPen(QColor(255, 255, 255, 90), 1))
+            p.setPen(Qt.NoPen)
             p.setBrush(QColor(style["fill"]))
-            p.drawRoundedRect(r, 8, 8)
-            p.setPen(QColor(style["text"]))
-            p.setFont(QFont("Microsoft YaHei UI",
-                            int(max(8.0, min(unit * 0.34, 22.0))), QFont.DemiBold))
+            p.drawRoundedRect(r, 6, 6)
+            p.setPen(style["text"])
+            p.setFont(QFont("Consolas", int(max(8.0, min(unit * 0.4, 18.0))), QFont.Bold))
             p.drawText(r, Qt.AlignCenter, KEY_LABELS[ch])
 
-        for ch, (t0, st) in list(self.flashes.items()):
-            age = now - t0
-            if age > 0.35:
-                self.flashes.pop(ch, None)
-                continue
-            c = QColor(STATE_STYLE[st]["fill"])
-            c.setAlpha(int(170 * (1 - age / 0.35)))
-            p.setPen(Qt.NoPen)
-            p.setBrush(c)
-            p.drawRoundedRect(QRectF(x0 + ch * ch_w + 2, hit_y - 5, ch_w - 4, 10), 4, 4)
-
         if not self.rec_count:
-            p.setPen(QColor(255, 255, 255, 120))
+            p.setPen(QColor(71, 85, 105))
             p.setFont(QFont("Microsoft YaHei UI", 10))
-            p.drawText(QRectF(x0, ty - 40.0, avail, 24.0), Qt.AlignCenter,
-                       "还没有录到音… 直接按 z x c v b n m , 试试")
+            p.drawText(QRectF(x0, ty - 30.0, avail, 20.0), Qt.AlignCenter,
+                       "按 z x c v b n m , 开始录音")
 
     def _draw_follow(self, p, x0, ch_w, hit_y):
         now = time.monotonic()
@@ -961,9 +1013,6 @@ class Overlay(QWidget):
         speed = max(40.0, float(self.cfg.get("follow_speed", 200)))
         play = self._follow_play_time(now)
         w = float(self.width())
-
-        p.setPen(QPen(QColor(255, 255, 255, 110), 1))
-        p.drawLine(QPointF(x0, hit_y), QPointF(w - 8.0, hit_y))
 
         draw_from = self.follow_next
         if self.follow_fade:
@@ -979,7 +1028,7 @@ class Overlay(QWidget):
             if y_start > hit_y + 6.0:
                 self.follow_fade.discard(i)
                 continue
-            rect = QRectF(x0 + ch * ch_w + ch_w * 0.22, y_start, ch_w * 0.56, bh)
+            rect = QRectF(x0 + ch * ch_w + ch_w * 0.1, y_start, ch_w * 0.80, bh)
             holding = bool(self.follow_hold and self.follow_hold["idx"] == i)
             if holding:
                 p.save()
@@ -988,63 +1037,41 @@ class Overlay(QWidget):
                              highlight=(i == self.follow_next and not holding))
             if holding:
                 prog = self._follow_hold_progress(now)
-                p.setPen(QPen(QColor(255, 255, 255, int(210 - 110 * prog)), 2))
+                p.setPen(QPen(QColor(255, 255, 255, int(200 - 100 * prog)), 2))
                 p.setBrush(Qt.NoBrush)
-                rad = min(12.0, max(3.0, rect.width() / 2.0))
-                p.drawRoundedRect(rect.adjusted(-2.0, -2.0, 2.0, 2.0), rad, rad)
+                rad = min(8.0, max(3.0, rect.width() / 2.0))
+                p.drawRoundedRect(rect.adjusted(-1.0, -1.0, 1.0, 1.0), rad, rad)
                 p.restore()
-                bw = max(4.0, ch_w * 0.56 * (1.0 - prog))
-                c = QColor(STATE_STYLE[st]["fill"])
-                c.setAlpha(180)
-                p.setPen(Qt.NoPen)
-                p.setBrush(c)
-                p.drawRoundedRect(QRectF(x0 + ch * ch_w + (ch_w - bw) / 2.0,
-                                         hit_y - 9.0, bw, 9.0), 4, 4)
             if i in self.follow_fade or i in self.follow_missed:
-                r = min(12.0, rect.height() / 2.0, rect.width() / 2.0)
+                r = min(8.0, rect.height() / 2.0, rect.width() / 2.0)
                 p.setPen(Qt.NoPen)
-                p.setBrush(QColor(0, 0, 0, 150))
+                p.setBrush(QColor(0, 0, 0, 140))
                 p.drawRoundedRect(rect, r, r)
-
-        self._draw_impacts(p, x0, ch_w, hit_y)
 
         if self.follow_state == "idle":
             first = song.notes[0] if song.notes else None
-            p.setPen(QColor(255, 255, 255, 240))
-            p.setFont(QFont("Microsoft YaHei UI", 13, QFont.DemiBold))
-            p.drawText(QRectF(x0, hit_y * 0.30, w - x0, 30), Qt.AlignCenter,
-                       "跟随演奏模式")
-            p.setPen(QColor(255, 255, 255, 175))
-            p.setFont(QFont("Microsoft YaHei UI", 10))
+            p.setPen(QColor(30, 64, 175))
+            p.setFont(QFont("Microsoft YaHei UI", 12, QFont.Bold))
+            p.drawText(QRectF(x0, hit_y * 0.35, w - x0, 24), Qt.AlignCenter,
+                       "跟随模式")
             if first is not None:
-                p.drawText(QRectF(x0, hit_y * 0.30 + 30, w - x0, 24), Qt.AlignCenter,
-                           "弹对第一个音「%s」开始" % KEY_LABELS[first[2]])
-            p.drawText(QRectF(x0, hit_y * 0.30 + 54, w - x0, 24), Qt.AlignCenter,
-                       "开始前倒计时 %d 秒 · 每个音都要按住直到被吃掉"
-                       % int(self.cfg.get("countdown_seconds", 3)))
+                p.setPen(QColor(71, 85, 105))
+                p.setFont(QFont("Microsoft YaHei UI", 10))
+                p.drawText(QRectF(x0, hit_y * 0.35 + 24, w - x0, 20), Qt.AlignCenter,
+                           "弹「%s」开始" % KEY_LABELS[first[2]])
 
         if self.follow_state == "countdown" and self.countdown_deadline is not None:
             remain = self.countdown_deadline - now
             n = max(1, int(math.ceil(remain)))
-            p.setPen(QColor(255, 255, 255, 235))
-            p.setFont(QFont("Microsoft YaHei UI", 54, QFont.Bold))
-            p.drawText(QRectF(x0, hit_y * 0.30, w - x0, 64), Qt.AlignCenter, str(n))
-            p.setPen(QColor(255, 255, 255, 160))
-            p.setFont(QFont("Microsoft YaHei UI", 11))
-            p.drawText(QRectF(x0, hit_y * 0.30 + 66, w - x0, 24), Qt.AlignCenter,
-                       "准备…")
+            p.setPen(QColor(30, 64, 175))
+            p.setFont(QFont("Microsoft YaHei UI", 30, QFont.Bold))
+            p.drawText(QRectF(x0, hit_y * 0.35, w - x0, 40), Qt.AlignCenter, str(n))
 
         if self.follow_state == "done":
-            p.setPen(QColor(255, 255, 255, 220))
-            p.setFont(QFont("Microsoft YaHei UI", 14, QFont.DemiBold))
-            p.drawText(QRectF(x0, hit_y * 0.42, w - x0, 30), Qt.AlignCenter,
-                       "演奏完成")
-
-        rate = self._follow_rate()
-        p.setPen(QColor(255, 255, 255, 205 if abs(rate - 1.0) > 1e-9 else 95))
-        p.setFont(QFont("Microsoft YaHei UI", 10, QFont.DemiBold))
-        p.drawText(QRectF(x0, 6.0, w - x0 - 10.0, 18.0),
-                   Qt.AlignRight | Qt.AlignVCenter, "倍速 %d%%" % round(rate * 100))
+            p.setPen(QColor(22, 163, 74))
+            p.setFont(QFont("Microsoft YaHei UI", 13, QFont.Bold))
+            p.drawText(QRectF(x0, hit_y * 0.4, w - x0, 24), Qt.AlignCenter,
+                       "完成")
 
     def _draw_impacts(self, p, x0, ch_w, hit_y):
         now = time.monotonic()
@@ -1078,14 +1105,8 @@ class Overlay(QWidget):
         color = QColor(STRIP_COLORS[st])
         left, width = x0, w - x0 - 8.0
         p.setPen(Qt.NoPen)
-        glow = QColor(color)
-        glow.setAlpha(70)
-        p.setBrush(glow)
-        p.drawRoundedRect(QRectF(left, hit_y - 5.0, width, 12.0), 6, 6)
         p.setBrush(color)
-        p.drawRoundedRect(QRectF(left, hit_y - 2.0, width, 4.0), 2, 2)
-        p.setBrush(QColor(0, 0, 0, 70))
-        p.drawRoundedRect(QRectF(left, hit_y + 3.0, width, 3.0), 1.5, 1.5)
+        p.drawRoundedRect(QRectF(left, hit_y - 1.5, width, 3.0), 1.5, 1.5)
 
     def _draw_toast(self, p, x0, w):
         if not self._toast:
@@ -1100,9 +1121,9 @@ class Overlay(QWidget):
         tw = min(float(fm.horizontalAdvance(text) + 24), max(80.0, w - x0 - 20.0))
         rect = QRectF(w - 10.0 - tw, 10.0, tw, 24.0)
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(18, 16, 14, min(205, alpha)))
+        p.setBrush(QColor(30, 64, 175, min(235, alpha)))
         p.drawRoundedRect(rect, 12, 12)
-        p.setPen(QColor(0xFF, 0xE0, 0x9A, alpha))
+        p.setPen(QColor(0xFF, 0xFF, 0xFF, alpha))
         p.setFont(QFont("Microsoft YaHei UI", 9))
         p.drawText(rect, Qt.AlignCenter, fm.elidedText(text, Qt.ElideRight,
                                                        int(max(10.0, tw - 18.0))))
@@ -1112,11 +1133,11 @@ class Overlay(QWidget):
             return
         p.setPen(QPen(QColor(0xF0, 0xA3, 0x3C, 200), 2, Qt.DashLine))
         p.setBrush(Qt.NoBrush)
-        p.drawRoundedRect(QRectF(2, 2, w - 4, h - 4), 12, 12)
+        p.drawRect(2, 2, int(w - 4), int(h - 4))
         p.setPen(QColor(0xF0, 0xA3, 0x3C, 235))
-        p.setFont(QFont("Microsoft YaHei UI", 11))
-        p.drawText(QRectF(x0, hit_y * 0.38, max(80.0, w - x0 - 8), 24), Qt.AlignHCenter,
-                   "调整模式：拖动移动 · 拖边缘缩放 · 让 8 条竖线对准琴键、灯带贴住琴键上沿 · %s 锁定"
+        p.setFont(QFont("Microsoft YaHei UI", 11, QFont.Bold))
+        p.drawText(QRectF(x0, hit_y * 0.38, max(80.0, w - x0 - 8), 20), Qt.AlignHCenter,
+                   "调整模式：拖动移动/缩放 · %s 锁定"
                    % self.hk("toggle_adjust"))
 
     def save_geometry(self):
@@ -1126,7 +1147,7 @@ class Overlay(QWidget):
         schedule_save(updates)
 
     def _edge_at(self, pos):
-        m = 10
+        m = 8
         w, h = self.width(), self.height()
         l, r = pos.x() <= m, pos.x() >= w - m
         t, b = pos.y() <= m, pos.y() >= h - m
@@ -1140,48 +1161,65 @@ class Overlay(QWidget):
         if b: return "b"
         return None
 
+    def _is_on_close(self, pos):
+        return pos.x() >= self.width() - 36 and pos.y() <= 32.0
+
+    def _is_in_title_bar(self, pos):
+        return pos.y() <= 32.0 and not self._is_on_close(pos)
+
     def mousePressEvent(self, e):
-        if not self.adjust_mode:
-            return
         pos = e.position()
-        self._resize_dir = self._edge_at(pos)
-        g = e.globalPosition().toPoint()
-        self._drag = g if self._resize_dir else g - self.frameGeometry().topLeft()
+        if self._is_on_close(pos):
+            self.close_requested.emit()
+            return
+        edge = self._edge_at(pos)
+        if edge:
+            self._resize_dir = edge
+            self._resize_start_geo = self.geometry()
+            self._drag_start = e.globalPosition().toPoint()
+            return
+        if self._is_in_title_bar(pos) or self.adjust_mode:
+            self._drag = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            self._resize_dir = None
 
     def mouseMoveEvent(self, e):
-        if not self.adjust_mode:
-            return
         g = e.globalPosition().toPoint()
-        if self._drag is None:
+        if self._resize_dir and self._resize_start_geo is not None:
+            geo = self._resize_start_geo
+            dx = g.x() - self._drag_start.x()
+            dy = g.y() - self._drag_start.y()
+            nx, ny, nw, nh = geo.x(), geo.y(), geo.width(), geo.height()
+            d = self._resize_dir
+            if "l" in d:
+                nx = geo.x() + dx
+                nw = geo.width() - dx
+            if "r" in d:
+                nw = geo.width() + dx
+            if "t" in d:
+                ny = geo.y() + dy
+                nh = geo.height() - dy
+            if "b" in d:
+                nh = geo.height() + dy
+            if nw >= 300 and nh >= 150:
+                self.setGeometry(nx, ny, nw, nh)
+        elif self._drag is not None:
+            self.move(g - self._drag)
+        else:
             edge = self._edge_at(e.position())
             cursors = {"l": Qt.SizeHorCursor, "r": Qt.SizeHorCursor,
                        "t": Qt.SizeVerCursor, "b": Qt.SizeVerCursor,
                        "lt": Qt.SizeFDiagCursor, "rb": Qt.SizeFDiagCursor,
                        "rt": Qt.SizeBDiagCursor, "lb": Qt.SizeBDiagCursor}
-            self.setCursor(cursors.get(edge, Qt.ArrowCursor))
-            return
-        if self._resize_dir:
-            geo = self.frameGeometry()
-            nx, ny, nw, nh = geo.x(), geo.y(), geo.width(), geo.height()
-            d = self._resize_dir
-            if "l" in d:
-                dx = g.x() - self._drag.x()
-                nx, nw = geo.x() + dx, geo.width() - dx
-            if "r" in d:
-                nw = geo.width() + (g.x() - self._drag.x())
-            if "t" in d:
-                dy = g.y() - self._drag.y()
-                ny, nh = geo.y() + dy, geo.height() - dy
-            if "b" in d:
-                nh = geo.height() + (g.y() - self._drag.y())
-            if nw >= 420 and nh >= 360:
-                self.setGeometry(nx, ny, nw, nh)
-            self._drag = g
-        else:
-            self.move(g - self._drag)
+            if edge:
+                self.setCursor(cursors[edge])
+            elif self._is_in_title_bar(e.position()):
+                self.setCursor(Qt.SizeAllCursor)
+            else:
+                self.setCursor(Qt.ArrowCursor)
 
     def mouseReleaseEvent(self, e):
-        if self.adjust_mode and (self._drag is not None or self._resize_dir):
+        if self._drag is not None or self._resize_dir:
             self.save_geometry()
         self._drag = None
         self._resize_dir = None
+        self._resize_start_geo = None
